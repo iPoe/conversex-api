@@ -1,1 +1,7 @@
-.env\n__pycache__/\n*.pyc\n.pytest_cache/\nvenv/
+.env
+api.log
+__pycache__/
+*.pyc
+.pytest_cache/
+venv/
+.DS_Store
