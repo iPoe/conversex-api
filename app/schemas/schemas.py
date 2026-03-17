@@ -33,6 +33,16 @@ class RoomResponse(BaseModel):
     status: str
     players: List[PlayerResponse]
 
+class TurnRecord(BaseModel):
+    turnNumber: int
+    playerName: str
+    diceValue: int
+    caseId: str
+    selectedOption: Optional[int] = None
+    feedback: Dict[str, str]
+    pointsEarned: int
+    timestamp: str
+
 class LiveGameState(BaseModel):
     gameId: UUID
     roomCode: str
@@ -41,4 +51,4 @@ class LiveGameState(BaseModel):
     totalTurns: int
     pointsToWin: int
     players: List[PlayerResponse]
-    turnHistory: List[Dict[str, Any]] = []
+    turnHistory: List[TurnRecord] = []
