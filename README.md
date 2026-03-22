@@ -19,6 +19,7 @@ create table rooms (
   id uuid default gen_random_uuid() primary key,
   room_code varchar(6) unique not null,
   status text check (status in ('waiting', 'in_progress', 'playing', 'finished')) default 'waiting',
+  dice_value int,
   config jsonb default '{"totalTurns": 10, "pointsToWin": 40, "isTimerEnabled": false}'::jsonb,
   created_at timestamp with time zone default now()
 );

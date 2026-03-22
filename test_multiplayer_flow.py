@@ -67,6 +67,29 @@ async def test_flow():
                 print(f"   * {p['name']}: Score {p['score']}, Posición {p['boardPosition']}")
         else:
             print(f"Error al iniciar partida: {response.text}")
+            return
+
+        # 4. Lanzar dados (Simulación de Turno)
+        print("\n4. Simulación de lanzamiento de dados (POST /rooms/{code}/roll)...")
+        
+        # Primero probamos con el jugador equivocado (María) para ver el 403
+        print(f" - Intento de María (Invitada) fuera de su turno...")
+        roll_request_fail = {"playerName": "María (Invitada)"}
+        response = await client.post(f"{BASE_URL}/rooms/{room_code}/roll", json=roll_request_fail)
+        if response.status_code == 403:
+            print(f"   * ✅ Validado: El servidor rechazó el tiro fuera de turno: {response.json()['detail']}")
+        else:
+            print(f"   * ❌ Error: Se esperaba 403, se obtuvo {response.status_code}")
+
+        # Ahora el jugador correcto (Carlos) lanza el dado
+        print(f" - Intento de Carlos (Host) en su turno...")
+        roll_request_success = {"playerName": "Carlos (Host)"}
+        response = await client.post(f"{BASE_URL}/rooms/{room_code}/roll", json=roll_request_success)
+        if response.status_code == 200:
+            roll_data = response.json()
+            print(f"   * ✅ Éxito! Carlos lanzó un: {roll_data['diceValue']}")
+        else:
+            print(f"   * ❌ Error al lanzar dado: {response.text}")
 
         print("\n--- Simulación de flujo completada con éxito ---")
 

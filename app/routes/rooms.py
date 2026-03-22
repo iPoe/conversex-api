@@ -1,7 +1,8 @@
 from fastapi import APIRouter, HTTPException
 from app.schemas.schemas import (
     RoomCreateRequest, RoomResponse, PlayerJoinRequest, 
-    PlayerResponse, GameStartRequest, LiveGameState, TurnRecord
+    PlayerResponse, GameStartRequest, LiveGameState, TurnRecord,
+    RollDiceRequest, RollDiceResponse
 )
 from core.database import supabase
 import random
@@ -216,3 +217,40 @@ async def record_turn(roomCode: str, turn: TurnRecord):
         players=players_list,
         turnHistory=[TurnRecord(**t) for t in turn_history]
     )
+
+@router.post("/rooms/{roomCode}/roll", response_model=RollDiceResponse)
+async def roll_dice(roomCode: str, request: RollDiceRequest):
+    # 1. Get room
+    room_res = supabase.table("rooms").select("*").eq("room_code", roomCode).execute()
+    if not room_res.data:
+        raise HTTPException(status_code=404, detail="Room not found")
+    
+    room = room_res.data[0]
+    room_id = room["id"]
+    config = room.get("config", {})
+    turn_history = config.get("turnHistory", [])
+    
+    # 2. (Optional but recommended) Validate if it's the player's turn
+    # We order by created_at to ensure consistent turn order
+    players_res = supabase.table("players").select("*").eq("room_id", room_id).order("created_at").execute()
+    players = players_res.data
+    
+    if players:
+        current_turn_index = len(turn_history) % len(players)
+        if players[current_turn_index]["name"] != request.playerName:
+            raise HTTPException(
+                status_code=403, 
+                detail=f"It's not {request.playerName}'s turn. It's {players[current_turn_index]['name']}'s turn."
+            )
+
+    # 3. Generate Dice
+    dice_value = random.randint(1, 6)
+    
+    # 4. Update Supabase Room (Broadcast via Realtime)
+    # This triggers an UPDATE event that the frontend listens to
+    update_data = {
+        "dice_value": dice_value
+    }
+    supabase.table("rooms").update(update_data).eq("id", room_id).execute()
+    
+    return RollDiceResponse(diceValue=dice_value)

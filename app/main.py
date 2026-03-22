@@ -14,7 +14,7 @@ origins = [
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"], # Permitir todos los orígenes para facilitar el desarrollo con Lovable
-    allow_credentials=True,
+    allow_credentials=False, # Cambiado a False para permitir "*" en origins (estándar de seguridad CORS)
     allow_methods=["*"],
     allow_headers=["*"],
 )

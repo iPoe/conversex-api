@@ -5,3 +5,10 @@ __pycache__/
 .pytest_cache/
 venv/
 .DS_Store
+
+#Ignore personal files
+contract.md
+game_start_prompt.md
+lovable_prompt.md
+prompt.md
+thinking.json

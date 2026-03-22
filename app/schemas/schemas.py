@@ -17,6 +17,9 @@ class GameStartRequest(BaseModel):
     pointsToWin: int = 40
     isTimerEnabled: bool = False
 
+class RollDiceRequest(BaseModel):
+    playerName: str
+
 # --- Responses ---
 class PlayerResponse(BaseModel):
     name: str
@@ -26,6 +29,9 @@ class PlayerResponse(BaseModel):
     boardPosition: int = 0
     score: int = 0
     turnsPlayed: int = 0
+
+class RollDiceResponse(BaseModel):
+    diceValue: int
 
 class RoomResponse(BaseModel):
     roomCode: str
