@@ -20,7 +20,21 @@ class GameStartRequest(BaseModel):
 class RollDiceRequest(BaseModel):
     playerName: str
 
+class VoteRequest(BaseModel):
+    voterName: str
+    optionId: str
+
 # --- Responses ---
+class RubricOption(BaseModel):
+    id: str
+    text: str
+    points: int
+
+class CaseResponse(BaseModel):
+    caseId: UUID
+    description: str
+    rubric: List[RubricOption]
+
 class PlayerResponse(BaseModel):
     name: str
     avatar: str
@@ -37,6 +51,7 @@ class RoomResponse(BaseModel):
     roomCode: str
     gameId: UUID
     status: str
+    phase: str = "rolling"
     players: List[PlayerResponse]
 
 class TurnRecord(BaseModel):
@@ -53,8 +68,10 @@ class LiveGameState(BaseModel):
     gameId: UUID
     roomCode: str
     status: str
+    phase: str = "rolling"
     currentTurnIndex: int
     totalTurns: int
     pointsToWin: int
     players: List[PlayerResponse]
     turnHistory: List[TurnRecord] = []
+    currentCaseId: Optional[UUID] = None

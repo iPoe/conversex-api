@@ -2,7 +2,7 @@ from fastapi import APIRouter, HTTPException
 from app.schemas.schemas import (
     RoomCreateRequest, RoomResponse, PlayerJoinRequest, 
     PlayerResponse, GameStartRequest, LiveGameState, TurnRecord,
-    RollDiceRequest, RollDiceResponse
+    RollDiceRequest, RollDiceResponse, VoteRequest, CaseResponse, RubricOption
 )
 from core.database import supabase
 import random
@@ -254,3 +254,121 @@ async def roll_dice(roomCode: str, request: RollDiceRequest):
     supabase.table("rooms").update(update_data).eq("id", room_id).execute()
     
     return RollDiceResponse(diceValue=dice_value)
+
+@router.get("/rooms/{roomCode}/case", response_model=CaseResponse)
+async def get_current_case(roomCode: str):
+    # 1. Get room and player turn
+    room_res = supabase.table("rooms").select("*").eq("room_code", roomCode).execute()
+    if not room_res.data:
+        raise HTTPException(status_code=404, detail="Room not found")
+    
+    room = room_res.data[0]
+    config = room.get("config", {})
+    turn_history = config.get("turnHistory", [])
+    
+    # 2. Find whose turn it is
+    players_res = supabase.table("players").select("*").eq("room_id", room["id"]).order("created_at").execute()
+    players = players_res.data
+    current_player_idx = len(turn_history) % len(players)
+    current_player = players[current_player_idx]
+    
+    # 3. Calculate board position (sum of dice values in turn history)
+    board_pos = sum([t["diceValue"] for t in turn_history if t["playerName"] == current_player["name"]])
+    zone = (board_pos // 10) + 1 # Simple logic: every 10 spaces is a new zone
+    
+    # 4. Fetch random case for that zone
+    case_res = supabase.table("cases").select("*").eq("zone", zone).execute()
+    if not case_res.data:
+        # Fallback to any case if zone has none
+        case_res = supabase.table("cases").select("*").limit(1).execute()
+    
+    if not case_res.data:
+        raise HTTPException(status_code=404, detail="No cases found in DB")
+    
+    selected_case = random.choice(case_res.data)
+    
+    # 5. Update room phase to 'arguing'
+    supabase.table("rooms").update({
+        "phase": "arguing",
+        "current_case_id": selected_case["id"]
+    }).eq("id", room["id"]).execute()
+    
+    return CaseResponse(
+        caseId=selected_case["id"],
+        description=selected_case["description"],
+        rubric=[RubricOption(**r) for r in selected_case["rubric"]]
+    )
+
+@router.post("/rooms/{roomCode}/vote")
+async def cast_vote(roomCode: str, request: VoteRequest):
+    room_res = supabase.table("rooms").select("*").eq("room_code", roomCode).execute()
+    if not room_res.data:
+        raise HTTPException(status_code=404, detail="Room not found")
+    
+    room = room_res.data[0]
+    
+    # Insert or update vote
+    vote_data = {
+        "room_id": room["id"],
+        "voter_name": request.voterName,
+        "option_id": request.optionId
+    }
+    
+    # Using upsert logic via Supabase (requires unique constraint on room_id + voter_name)
+    supabase.table("votes").upsert(vote_data).execute()
+    
+    # Update phase to 'voting' if it was 'arguing'
+    if room["phase"] == "arguing":
+        supabase.table("rooms").update({"phase": "voting"}).eq("id", room["id"]).execute()
+    
+    return {"status": "vote_cast"}
+
+@router.get("/rooms/{roomCode}/vote-results")
+async def get_vote_results(roomCode: str):
+    # 1. Get room and case
+    room_res = supabase.table("rooms").select("*").eq("room_code", roomCode).execute()
+    if not room_res.data:
+        raise HTTPException(status_code=404, detail="Room not found")
+    
+    room = room_res.data[0]
+    case_res = supabase.table("cases").select("*").eq("id", room["current_case_id"]).execute()
+    if not case_res.data:
+        raise HTTPException(status_code=404, detail="Current case not found")
+    
+    case = case_res.data[0]
+    rubric = {r["id"]: r["points"] for r in case["rubric"]}
+    
+    # 2. Get all votes
+    votes_res = supabase.table("votes").select("*").eq("room_id", room["id"]).execute()
+    votes = votes_res.data
+    
+    if not votes:
+        return {"status": "no_votes", "pointsEarned": 0}
+    
+    # 3. Calculate MODE
+    counts = {}
+    for v in votes:
+        opt = v["option_id"]
+        counts[opt] = counts.get(opt, 0) + 1
+    
+    max_votes = max(counts.values())
+    winners = [opt for opt, count in counts.items() if count == max_votes]
+    
+    # 4. TIE BREAKER: Option with highest points
+    final_option = winners[0]
+    if len(winners) > 1:
+        final_option = max(winners, key=lambda opt: rubric.get(opt, 0))
+    
+    points_earned = rubric.get(final_option, 0)
+    
+    # 5. Cleanup: Delete votes for this room
+    supabase.table("votes").delete().eq("room_id", room["id"]).execute()
+    
+    # 6. Update phase to 'rolling' for next player
+    supabase.table("rooms").update({"phase": "rolling"}).eq("id", room["id"]).execute()
+    
+    return {
+        "winnerOption": final_option,
+        "pointsEarned": points_earned,
+        "voteCount": counts
+    }

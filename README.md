@@ -19,9 +19,29 @@ create table rooms (
   id uuid default gen_random_uuid() primary key,
   room_code varchar(6) unique not null,
   status text check (status in ('waiting', 'in_progress', 'playing', 'finished')) default 'waiting',
+  phase text check (phase in ('rolling', 'moving', 'arguing', 'voting', 'finished')) default 'rolling',
+  current_case_id uuid,
   dice_value int,
   config jsonb default '{"totalTurns": 10, "pointsToWin": 40, "isTimerEnabled": false}'::jsonb,
   created_at timestamp with time zone default now()
+);
+
+-- Tabla de Casos (Cases)
+create table cases (
+  id uuid default gen_random_uuid() primary key,
+  zone int not null, -- 1: Consentimiento, 2: Diversidad, 3: Salud, etc.
+  description text not null,
+  rubric jsonb not null -- Array de {id: string, text: string, points: int}
+);
+
+-- Tabla de Votos (Votes)
+create table votes (
+  id uuid default gen_random_uuid() primary key,
+  room_id uuid references rooms(id) on delete cascade,
+  voter_name text not null,
+  option_id text not null, -- Referencia al ID de la rúbrica
+  created_at timestamp with time zone default now(),
+  unique(room_id, voter_name) -- Un voto por persona por sala (se limpia cada turno)
 );
 
 -- Tabla de Jugadores (Players)
@@ -38,6 +58,7 @@ create table players (
 -- 2. Habilitar Realtime para sincronización con el Frontend
 alter publication supabase_realtime add table rooms;
 alter publication supabase_realtime add table players;
+alter publication supabase_realtime add table votes;
 ```
 
 ## 🚀 Instalación y Uso
