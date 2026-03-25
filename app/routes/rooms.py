@@ -321,8 +321,7 @@ async def get_current_case(roomCode: str):
         raise HTTPException(status_code=404, detail="Room not found")
     
     room = room_res.data[0]
-    config = room.get("config", {})
-    zone_id = config.get("currentZoneId")
+    zone_id = room.get("current_zone_id")
     
     if not zone_id:
         raise HTTPException(status_code=400, detail="No zone currently active in this room")
