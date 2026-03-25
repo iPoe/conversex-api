@@ -24,6 +24,11 @@ class VoteRequest(BaseModel):
     voterName: str
     optionId: str
 
+class BoardPosition(BaseModel):
+    nodeId: str
+    edgeId: Optional[str] = None
+    edgeProgress: int = 0
+
 # --- Responses ---
 class RubricOption(BaseModel):
     id: str
@@ -40,12 +45,24 @@ class PlayerResponse(BaseModel):
     avatar: str
     isHost: bool
     onlineStatus: bool = True
-    boardPosition: int = 0
+    boardPosition: BoardPosition
     score: int = 0
     turnsPlayed: int = 0
 
 class RollDiceResponse(BaseModel):
     diceValue: int
+
+class MoveRequest(BaseModel):
+    playerName: str
+    diceValue: int
+    choiceEdgeId: Optional[str] = None
+
+class MoveResponse(BaseModel):
+    newPosition: BoardPosition
+    remainingSteps: int
+    status: str
+    options: Optional[List[str]] = None
+    zoneId: Optional[str] = None
 
 class RoomResponse(BaseModel):
     roomCode: str
