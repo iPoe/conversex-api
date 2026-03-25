@@ -21,8 +21,10 @@ create table rooms (
   status text check (status in ('waiting', 'in_progress', 'playing', 'finished')) default 'waiting',
   phase text check (phase in ('rolling', 'moving', 'arguing', 'voting', 'finished')) default 'rolling',
   current_case_id uuid,
+  current_zone_id text, -- Tracking de zona por ID (Hospital, Wifi, etc)
+  current_argument text, -- Almacenamiento de argumentación para votación
   dice_value int,
-  config jsonb default '{"totalTurns": 10, "pointsToWin": 40, "isTimerEnabled": false}'::jsonb,
+  config jsonb default '{"totalTurns": 10, "pointsToWin": 40, "isTimerEnabled": false, "turnHistory": []}'::jsonb,
   created_at timestamp with time zone default now()
 );
 
@@ -52,6 +54,7 @@ create table players (
   avatar_id text not null,
   is_host boolean default false,
   online_status boolean default true,
+  current_position jsonb default '{"nodeId": "park", "edgeId": null, "edgeProgress": 0}'::jsonb, -- Tracking de posición en grafo
   created_at timestamp with time zone default now()
 );
 
@@ -67,40 +70,39 @@ alter publication supabase_realtime add table votes;
    ```bash
    pip install -r requirements.txt
    ```
-2. **Variables de Entorno:**
+2. **Variables de Env:**
    Copia `.env.example` a `.env` y rellena `SUPABASE_URL` y `SUPABASE_KEY`.
 
 3. **Ejecutar Servidor:**
    ```bash
-   python -m uvicorn app.main:app --reload
+   python3 -m uvicorn app.main:app --reload
    ```
    *Accede a la documentación en: `http://127.0.0.1:8000/docs`*
 
-## 🔌 Endpoints de la API (v2)
+## 🔌 Endpoints Destacados
 
 | Método | Endpoint | Propósito |
 |---|---|---|
 | `POST` | `/rooms` | Crear sala y asignar Host |
 | `POST` | `/rooms/{code}/join` | Unirse a una sala existente (máx. 2) |
-| `POST` | `/rooms/{code}/start` | Iniciar partida e inicializar `LiveGameState` |
+| `POST` | `/rooms/{code}/move` | Moverse por el grafo (Server-Driven) |
+| `POST` | `/rooms/{code}/argue` | Enviar argumento (Trigger de votación) |
+| `POST` | `/rooms/{code}/vote` | Votar (Calcula resultados auto al terminar) |
 
 ## 🧪 Pruebas y Validación
 
-Hemos implementado scripts de prueba para asegurar la robustez del sistema:
+Hemos organizado los scripts de prueba en la carpeta `tests/`:
 
-1. **Flujo Normal (`test_multiplayer_flow.py`):** Simula el ciclo completo de creación, unión e inicio.
-2. **Robustez (`stress_test_flow.py`):** Valida casos borde y errores controlados:
-   - ✅ Error 404 si la sala no existe.
-   - ✅ Error 400 si se intenta unir a un 3er jugador.
-   - ✅ Error 422 si se envían tipos de datos inválidos.
-   - ✅ Éxito en la inicialización del estado del juego.
+1. **Flujo de Grafo (`tests/test_graph_flow.py`):** Valida el ciclo completo de "Game Master".
+2. **Flujo Básico (`tests/test_multiplayer_flow.py`):** Valida creación y unión.
+3. **Robusta (`tests/stress_test_flow.py`):** Valida casos borde y errores controlados.
 
 Para ejecutar las pruebas:
 ```bash
-python test_multiplayer_flow.py
-python stress_test_flow.py
+export PYTHONPATH=$PYTHONPATH:.
+python3 -m tests.test_graph_flow
 ```
 
 ## 📝 Notas de Desarrollo
-- La API utiliza **camelCase** para facilitar la integración con el frontend (Lovable/React).
-- El estado del juego se maneja a través de un objeto centralizado llamado `LiveGameState`.
+- La API utiliza **camelCase** en sus esquemas Pydantic para Lovable/React.
+- El servidor es ahora el "Game Master", controlando las fases (`phase`) y turnos.

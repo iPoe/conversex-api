@@ -24,6 +24,10 @@ class VoteRequest(BaseModel):
     voterName: str
     optionId: str
 
+class ArgumentRequest(BaseModel):
+    playerName: str
+    argument: str
+
 class BoardPosition(BaseModel):
     nodeId: str
     edgeId: Optional[str] = None
@@ -70,14 +74,15 @@ class RoomResponse(BaseModel):
     status: str
     phase: str = "rolling"
     players: List[PlayerResponse]
+    currentArgument: Optional[str] = None
 
 class TurnRecord(BaseModel):
     turnNumber: int
     playerName: str
     diceValue: int
     caseId: str
-    selectedOption: Optional[int] = None
-    feedback: Dict[str, str]
+    selectedOption: Optional[str] = None
+    feedback: Dict[str, str] = {}
     pointsEarned: int
     timestamp: str
 
@@ -92,3 +97,4 @@ class LiveGameState(BaseModel):
     players: List[PlayerResponse]
     turnHistory: List[TurnRecord] = []
     currentCaseId: Optional[UUID] = None
+    currentArgument: Optional[str] = None

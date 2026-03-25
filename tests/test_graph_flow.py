@@ -76,7 +76,7 @@ async def test_full_graph_flow():
             print(f"   * New Position: {move_data['newPosition']['edgeId']} at step {move_data['newPosition']['edgeProgress']}")
 
         # 5. Testing Automated Voting results
-        print("\n5. Testing Automatic Turn Transition...")
+        print("\n5. Testing Argument and Voting...")
         # Manually set room to arguing to test voting broadcast
         supabase.table("rooms").update({
             "phase": "arguing",
@@ -87,6 +87,14 @@ async def test_full_graph_flow():
         case_res = await client.get(f"{BASE_URL}/rooms/{room_code}/case")
         case_data = case_res.json()
         print(f"   * Case Received: {case_data['description']}")
+
+        # NEW: Submit Argument
+        print("   * Carlos submits an argument...")
+        arg_res = await client.post(f"{BASE_URL}/rooms/{room_code}/argue", json={
+            "playerName": "Carlos",
+            "argument": "I believe we should always ask for clear consent."
+        })
+        print(f"   * Argument Status: {arg_res.json()['status']}")
 
         print("   * Carlos votes A...")
         await client.post(f"{BASE_URL}/rooms/{room_code}/vote", json={"voterName": "Carlos", "optionId": "A"})

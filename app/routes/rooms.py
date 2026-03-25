@@ -3,7 +3,7 @@ from app.schemas.schemas import (
     RoomCreateRequest, RoomResponse, PlayerJoinRequest, 
     PlayerResponse, GameStartRequest, LiveGameState, TurnRecord,
     RollDiceRequest, RollDiceResponse, VoteRequest, CaseResponse, 
-    RubricOption, BoardPosition, MoveRequest, MoveResponse
+    RubricOption, BoardPosition, MoveRequest, MoveResponse, ArgumentRequest
 )
 from core.database import supabase
 from core.board import move_player, BOARD_NODES, get_outgoing_edges
@@ -62,7 +62,8 @@ async def create_room(request: RoomCreateRequest):
             avatar=host["avatar_id"],
             isHost=host["is_host"],
             boardPosition=BoardPosition(**host["current_position"])
-        )]
+        )],
+        currentArgument=room.get("current_argument")
     )
 
 @router.post("/rooms/{roomCode}/join", response_model=RoomResponse)
@@ -106,7 +107,8 @@ async def join_room(roomCode: str, request: PlayerJoinRequest):
         gameId=room["id"],
         status=room["status"],
         phase=room["phase"],
-        players=players_list
+        players=players_list,
+        currentArgument=room.get("current_argument")
     )
 
 @router.post("/rooms/{roomCode}/start", response_model=LiveGameState)
@@ -155,8 +157,27 @@ async def start_game(roomCode: str, request: GameStartRequest):
         totalTurns=updated_room["config"]["totalTurns"],
         pointsToWin=updated_room["config"]["pointsToWin"],
         players=players_list,
-        turnHistory=[]
+        turnHistory=[],
+        currentArgument=None
     )
+
+@router.post("/rooms/{roomCode}/argue")
+async def submit_argument(roomCode: str, request: ArgumentRequest):
+    # 1. Get room
+    room_res = supabase.table("rooms").select("*").eq("room_code", roomCode).execute()
+    if not room_res.data:
+        raise HTTPException(status_code=404, detail="Room not found")
+    
+    room = room_res.data[0]
+    
+    # 2. Update room with argument and change phase to 'voting'
+    # This acts as the broadcast for observers
+    supabase.table("rooms").update({
+        "current_argument": request.argument,
+        "phase": "voting"
+    }).eq("id", room["id"]).execute()
+    
+    return {"status": "argument_submitted"}
 
 @router.post("/rooms/{roomCode}/move", response_model=MoveResponse)
 async def move_player_route(roomCode: str, request: MoveRequest):
@@ -454,10 +475,11 @@ async def _process_voting_results(room, votes):
     update_data = {
         "status": new_status,
         "phase": new_phase,
+        "current_zone_id": None,
+        "current_argument": None,
         "config": {
             **config,
-            "turnHistory": turn_history,
-            "currentZoneId": None # Reset zone for next turn
+            "turnHistory": turn_history
         }
     }
     supabase.table("rooms").update(update_data).eq("id", room_id).execute()
