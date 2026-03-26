@@ -85,9 +85,14 @@ alter publication supabase_realtime add table votes;
 |---|---|---|
 | `POST` | `/rooms` | Crear sala y asignar Host |
 | `POST` | `/rooms/{code}/join` | Unirse a una sala existente (máx. 2) |
-| `POST` | `/rooms/{code}/move` | Moverse por el grafo (Server-Driven) |
-| `POST` | `/rooms/{code}/argue` | Enviar argumento (Trigger de votación) |
-| `POST` | `/rooms/{code}/vote` | Votar (Calcula resultados auto al terminar) |
+| `POST` | `/rooms/{code}/start` | Iniciar la partida y configurar parámetros |
+| `GET` | `/rooms/{code}` | Obtener el estado completo en tiempo real (`LiveGameState`) |
+| `POST` | `/rooms/{code}/roll` | Tirar el dado (Sincronización vía Realtime) |
+| `POST` | `/rooms/{code}/move` | Moverse por el grafo (Incluye `caseData` al llegar a zona) |
+| `POST` | `/rooms/{code}/argue` | Enviar argumento (Inicia fase de votación) |
+| `POST` | `/rooms/{code}/vote` | Emitir voto (Cálculo automático de resultados) |
+| `GET` | `/rooms/{code}/vote-results` | Consultar resultado de la última votación |
+| `POST` | `/rooms/{code}/reset` | Reiniciar sala y jugadores al estado inicial |
 
 ## 🧪 Pruebas y Validación
 
