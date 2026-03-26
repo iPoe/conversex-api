@@ -70,14 +70,28 @@ alter publication supabase_realtime add table votes;
    ```bash
    pip install -r requirements.txt
    ```
-2. **Variables de Env:**
-   Copia `.env.example` a `.env` y rellena `SUPABASE_URL` y `SUPABASE_KEY`.
+2. **Variables de Entorno:**
+   Copia `.env.example` a `.env` y asegúrate de configurar las siguientes variables:
+   - `SUPABASE_URL`: La URL de tu proyecto de Supabase.
+   - `SUPABASE_KEY`: El API Key (anon/public) de tu proyecto.
 
 3. **Ejecutar Servidor:**
    ```bash
    python3 -m uvicorn app.main:app --reload
    ```
    *Accede a la documentación en: `http://127.0.0.1:8000/docs`*
+
+## 🗳️ Carga de Datos (Seeding)
+
+Para cargar los casos y preguntas del juego desde un archivo Excel a Supabase:
+
+1. Asegúrate de tener el archivo `cases.xlsx` en la raíz.
+2. Ejecuta el script de seeding:
+   ```bash
+   python3 seed_cases_from_excel.py
+   ```
+   *Este script parseará automáticamente las hojas (Hospital, Internet, etc.) y subirá la rúbrica de puntos a la tabla `cases`.*
+
 
 ## 🔌 Endpoints Destacados
 
@@ -109,5 +123,14 @@ python3 -m tests.test_graph_flow
 ```
 
 ## 📝 Notas de Desarrollo
-- La API utiliza **camelCase** en sus esquemas Pydantic para Lovable/React.
-- El servidor es ahora el "Game Master", controlando las fases (`phase`) y turnos.
+
+### Arquitectura del Proyecto
+- `app/routes`: Lógica de negocio y endpoints (REST).
+- `app/schemas`: Modelos de datos Pydantic (CamelCase para Frontend).
+- `core/board.py`: **Motor del Juego**. Gestiona el grafo, caminos permitidos y detección de zonas.
+- `core/database.py`: Cliente centralizado de Supabase.
+
+### Sincronización en Tiempo Real
+- El servidor es el **"Game Master"**, controlando las fases (`phase`) e índices de turno (`current_turn_index`).
+- Las actualizaciones atómicas se realizan mediante el RPC `commit_player_move` en Supabase, lo que dispara eventos de Realtime inmediatos para todos los clientes (Jugadores y Observadores).
+- Se utiliza **CORS** abierto (`*`) en `app/main.py` para facilitar la integración local con React/Lovable.
