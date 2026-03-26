@@ -231,7 +231,14 @@ async def roll_dice_route(roomCode: str, request: RollDiceRequest):
 
     # 3. Roll and persist
     dice_value = roll_dice()
-    supabase.table("rooms").update({"dice_value": dice_value}).eq("id", room["id"]).execute()
+    
+    new_config = config.copy()
+    new_config["last_action_by"] = request.playerName
+    
+    supabase.table("rooms").update({
+        "dice_value": dice_value,
+        "config": new_config
+    }).eq("id", room["id"]).execute()
 
     return RollDiceResponse(diceValue=dice_value)
 
