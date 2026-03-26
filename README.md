@@ -136,12 +136,26 @@ python3 -m tests.test_graph_flow
 ## 📝 Notas de Desarrollo
 
 ### Arquitectura del Proyecto
-- `app/routes`: Lógica de negocio y endpoints (REST).
-- `app/schemas`: Modelos de datos Pydantic (CamelCase para Frontend).
-- `core/board.py`: **Motor del Juego**. Gestiona el grafo, caminos permitidos y detección de zonas.
-- `core/database.py`: Cliente centralizado de Supabase.
+- `app/enums.py`: **Máquina de Estados**. Enums centralizados para `RoomStatus` y `GamePhase`.
+- `app/routes`: Endpoints REST delgados que delegan la lógica al `game_service`.
+- `app/schema`: Modelos Pydantic con validación de entrada (`Field`).
+- `app/services/game_service.py`: **Capa de Servicio**. Contiene toda la lógica de negocio pura (dados, turnos, votación) desacoplada de la API.
+- `core/board.py`: **Motor de Movimiento**. Gestiona el grafo y la navegación por celdas.
+
+### 🧪 Pruebas Unitarias e Integración
+Además de las pruebas de flujo, contamos con una suite de pruebas unitarias para la lógica del juego:
+
+```bash
+# Ejecutar todas las pruebas unitarias (Service Layer)
+python3 -m pytest tests/test_game_service.py -v
+```
+
+### 🐞 Sistema de Debug (Frontend Sync)
+Para facilitar el desarrollo con el equipo de Frontend, la API incluye un sistema de logs locales:
+- `POST /debug/log`: Permite enviar logs desde el cliente para que se guarden en archivos `.txt` en el servidor.
+- `POST /debug/reset`: Limpia los archivos de log.
 
 ### Sincronización en Tiempo Real
 - El servidor es el **"Game Master"**, controlando las fases (`phase`) e índices de turno (`current_turn_index`).
-- Las actualizaciones atómicas se realizan mediante el RPC `commit_player_move` en Supabase, lo que dispara eventos de Realtime inmediatos para todos los clientes (Jugadores y Observadores).
-- Se utiliza **CORS** abierto (`*`) en `app/main.py` para facilitar la integración local con React/Lovable.
+- **Source of Truth**: El estado de los turnos y la historia se gestionan exclusivamente dentro del objeto `config` (JSONB) en la tabla `rooms`.
+- Las actualizaciones atómicas se realizan mediante el RPC `commit_player_move` en Supabase.
