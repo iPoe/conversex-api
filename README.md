@@ -64,6 +64,17 @@ alter publication supabase_realtime add table players;
 alter publication supabase_realtime add table votes;
 ```
 
+### 🔄 DB Migration (run after initial setup)
+
+If your `players` table was created before **2026-03-26**, run this migration in your Supabase SQL Editor:
+
+```sql
+-- Add score and turns_played columns (idempotent)
+alter table players add column if not exists score int default 0;
+alter table players add column if not exists turns_played int default 0;
+```
+
+
 ## 🚀 Instalación y Uso
 
 1. **Clonar e Instalar:**

@@ -3,14 +3,16 @@ from typing import List, Optional, Dict, Any
 from uuid import UUID
 from datetime import datetime
 
+from app.enums import RoomStatus, GamePhase
+
 # --- Requests ---
 class RoomCreateRequest(BaseModel):
-    hostName: str
-    hostAvatar: str
+    hostName: str = Field(..., min_length=1, max_length=50)
+    hostAvatar: str = Field(..., min_length=1)
 
 class PlayerJoinRequest(BaseModel):
-    playerName: str
-    playerAvatar: str
+    playerName: str = Field(..., min_length=1, max_length=50)
+    playerAvatar: str = Field(..., min_length=1)
 
 class GameStartRequest(BaseModel):
     totalTurns: int = 10
@@ -18,15 +20,15 @@ class GameStartRequest(BaseModel):
     isTimerEnabled: bool = False
 
 class RollDiceRequest(BaseModel):
-    playerName: str
+    playerName: str = Field(..., min_length=1)
 
 class VoteRequest(BaseModel):
-    voterName: str
-    optionId: str
+    voterName: str = Field(..., min_length=1)
+    optionId: str = Field(..., min_length=1)
 
 class ArgumentRequest(BaseModel):
-    playerName: str
-    argument: str
+    playerName: str = Field(..., min_length=1)
+    argument: str = Field(..., min_length=1)
 
 class BoardPosition(BaseModel):
     nodeId: str
@@ -57,7 +59,7 @@ class RollDiceResponse(BaseModel):
     diceValue: int
 
 class MoveRequest(BaseModel):
-    playerName: str
+    playerName: str = Field(..., min_length=1)
     diceValue: int
     choiceEdgeId: Optional[str] = None
 
@@ -72,8 +74,8 @@ class MoveResponse(BaseModel):
 class RoomResponse(BaseModel):
     roomCode: str
     gameId: UUID
-    status: str
-    phase: str = "rolling"
+    status: RoomStatus
+    phase: GamePhase = GamePhase.ROLLING
     players: List[PlayerResponse]
     currentArgument: Optional[str] = None
 
@@ -90,8 +92,8 @@ class TurnRecord(BaseModel):
 class LiveGameState(BaseModel):
     gameId: UUID
     roomCode: str
-    status: str
-    phase: str = "rolling"
+    status: RoomStatus
+    phase: GamePhase = GamePhase.ROLLING
     currentTurnIndex: int
     totalTurns: int
     pointsToWin: int
