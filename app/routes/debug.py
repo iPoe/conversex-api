@@ -1,11 +1,14 @@
 from fastapi import APIRouter, HTTPException
 from app.schemas.schemas import DebugLogRequest
+from core.config import settings
 import os
 
 router = APIRouter(prefix="/debug", tags=["debug"])
 
-# Local paths for logs (relative to project root or absolute)
-LOG_DIR = "/Users/joseleonardosaezbastidas/Documents/Thesis/conversex-core"
+# Environment-based log paths
+LOG_DIR = settings.DEBUG_LOG_DIR
+os.makedirs(LOG_DIR, exist_ok=True)
+
 LOG_FILES = {
     "A": os.path.join(LOG_DIR, "player_a_logs.txt"),
     "B": os.path.join(LOG_DIR, "player_b_logs.txt")
