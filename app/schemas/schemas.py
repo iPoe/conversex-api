@@ -30,6 +30,12 @@ class ArgumentRequest(BaseModel):
     playerName: str = Field(..., min_length=1)
     argument: str = Field(..., min_length=1)
 
+class DebugLogRequest(BaseModel):
+    playerName: str
+    message: str
+    level: str = "info"
+    timestamp: str
+
 class BoardPosition(BaseModel):
     nodeId: str
     edgeId: Optional[str] = None
