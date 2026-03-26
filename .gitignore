@@ -1,20 +1,21 @@
+# Secret/Environment
 .env
-api.log
+*.xlsx
+
+# Logs
+logs/
+*.log
+
+# Documentation & AI Prompts (Moved)
+docs/
+
+# Python standard
 __pycache__/
 *.pyc
 .pytest_cache/
 venv/
 .DS_Store
 
-#Ignore personal files
-contract.md
-game_start_prompt.md
-lovable_prompt.md
-prompt.md
-cases_setup.md
-cases.xlsx
+# Temporary/Personal
 thinking.json
-graph_explanation.md
 move_error.txt
-backend_reset_instruction.md
-implementation_plan_claude_audit.md
