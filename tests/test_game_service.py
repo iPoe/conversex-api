@@ -139,7 +139,9 @@ class TestAdvanceTurnConfig:
         assert updated["current_turn_index"] == 0
 
     def test_finished_when_total_turns_reached(self):
-        history = [{"t": i} for i in range(3)]  # 3 of 4 done
+        # 4 rounds * 2 players = 8 total turns. 
+        # If 7 are done, the 8th turn finishes the game.
+        history = [{"t": i} for i in range(7)]  
         config = self._base_config(history)
         new_turn = build_turn_record(history, "Alice", 4)
         updated, is_finished = advance_turn_config(config, new_turn, 2)
