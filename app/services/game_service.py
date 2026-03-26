@@ -64,8 +64,8 @@ def pick_case_for_zone(zone_id: str, supabase) -> Optional[Dict[str, Any]]:
     case_res = supabase.table("cases").select("*").eq("zone", zone_number).execute()
 
     if not case_res.data:
-        # Fallback: grab any available case
-        case_res = supabase.table("cases").select("*").limit(1).execute()
+        # Fallback: grab all available cases and pick one
+        case_res = supabase.table("cases").select("*").execute()
 
     if not case_res.data:
         return None
