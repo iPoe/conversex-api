@@ -111,6 +111,49 @@ async def join_room(roomCode: str, request: PlayerJoinRequest):
         currentArgument=room.get("current_argument")
     )
 
+@router.get("/rooms/{roomCode}", response_model=LiveGameState)
+async def get_room_state(roomCode: str):
+    # 1. Get room
+    room_res = supabase.table("rooms").select("*").eq("room_code", roomCode).execute()
+    if not room_res.data:
+        raise HTTPException(status_code=404, detail="Room not found")
+    
+    room = room_res.data[0]
+    room_id = room["id"]
+    config = room.get("config", {})
+    turn_history = config.get("turnHistory", [])
+    
+    # 2. Get players
+    players_res = supabase.table("players").select("*").eq("room_id", room_id).order("created_at").execute()
+    
+    players_list = [
+        PlayerResponse(
+            name=p["name"],
+            avatar=p["avatar_id"],
+            isHost=p["is_host"],
+            boardPosition=BoardPosition(**p["current_position"]),
+            score=p.get("score", 0),
+            turnsPlayed=p.get("turns_played", 0)
+        ) for p in players_res.data
+    ]
+    
+    # 3. Calculate current turn index
+    current_turn_index = len(turn_history) % len(players_list) if players_list else 0
+    
+    return LiveGameState(
+        gameId=room_id,
+        roomCode=room["room_code"],
+        status=room["status"],
+        phase=room["phase"],
+        currentTurnIndex=current_turn_index,
+        totalTurns=config.get("totalTurns", 10),
+        pointsToWin=config.get("pointsToWin", 40),
+        players=players_list,
+        turnHistory=[TurnRecord(**t) for t in turn_history],
+        currentCaseId=room.get("current_case_id"),
+        currentArgument=room.get("current_argument")
+    )
+
 @router.post("/rooms/{roomCode}/start", response_model=LiveGameState)
 async def start_game(roomCode: str, request: GameStartRequest):
     # 1. Get room
@@ -128,7 +171,9 @@ async def start_game(roomCode: str, request: GameStartRequest):
             "totalTurns": request.totalTurns,
             "pointsToWin": request.pointsToWin,
             "isTimerEnabled": request.isTimerEnabled,
-            "turnHistory": []
+            "turnHistory": [],
+            "current_turn_index": 0,
+            "completed_turns": 0
         }
     }
     updated_room_res = supabase.table("rooms").update(update_data).eq("id", room["id"]).execute()
@@ -192,36 +237,140 @@ async def move_player_route(roomCode: str, request: MoveRequest):
         raise HTTPException(status_code=404, detail="Player not found")
     player = player_res.data[0]
     
+    # NEW: Turn Validation
+    # Ensure it's actually this player's turn before allowing movement
+    players_res = supabase.table("players").select("*").eq("room_id", room["id"]).order("created_at").execute()
+    all_players = players_res.data
+    config = room.get("config", {})
+    turn_history = config.get("turnHistory", [])
+    
+    if all_players:
+        current_turn_index = len(turn_history) % len(all_players)
+        if all_players[current_turn_index]["name"] != request.playerName:
+            raise HTTPException(
+                status_code=403,
+                detail=f"It's not {request.playerName}'s turn."
+            )
+
     # 2. Execute movement logic
     current_pos = BoardPosition(**player["current_position"])
     move_result = move_player(current_pos, request.diceValue, request.choiceEdgeId)
     
-    # 3. Update player position in DB
+    # 3. Prepare Atomic Update Data
     new_pos = move_result["newPosition"]
-    supabase.table("players").update({"current_position": new_pos.dict()}).eq("id", player["id"]).execute()
     
-    # 4. Broadcast phase change
+    # Metadata for frontend tracking
+    new_config = config.copy()
+    new_config["last_action_by"] = request.playerName
+    new_config["branch_choice"] = request.choiceEdgeId
+    
+    # Phase and dice logic
     new_phase = "rolling"
-    update_room_data = {"phase": new_phase, "current_zone_id": None}
+    new_zone_id = None
+    new_dice_value = room.get("dice_value") # Keep by default
+    new_status = room.get("status", "in_progress")
     
+    case_response = None
     if move_result["status"] == "waiting_choice":
         new_phase = "moving"
-        update_room_data["phase"] = new_phase
     elif move_result["status"] == "zone_reached":
         new_phase = "arguing"
-        update_room_data["phase"] = new_phase
-        update_room_data["current_zone_id"] = move_result["zoneId"]
+        new_zone_id = move_result["zoneId"]
+        new_dice_value = None
+        
+        # --- Native Case Fetching ---
+        ZONE_MAP = {
+            "hospital": 1, "wifi": 2, "home": 3, 
+            "neighborhood": 4, "school": 5
+        }
+        zone_number = ZONE_MAP.get(new_zone_id, 1)
+        
+        case_res = supabase.table("cases").select("*").eq("zone", zone_number).execute()
+        if not case_res.data:
+            case_res = supabase.table("cases").select("*").limit(1).execute()
+        
+        if case_res.data:
+            selected_case = random.choice(case_res.data)
+            new_config["current_case_id"] = selected_case["id"]
+            new_config["current_case_data"] = selected_case
+            
+            case_response = CaseResponse(
+                caseId=selected_case["id"],
+                description=selected_case["description"],
+                rubric=[RubricOption(**r) for r in selected_case["rubric"]]
+            )
     else:
-        update_room_data["phase"] = new_phase
-    
-    supabase.table("rooms").update(update_room_data).eq("id", room["id"]).execute()
+        # Movement finished on a normal tile -> Advance Turn
+        new_phase = "rolling"
+        new_dice_value = None
+        
+        new_turn = {
+            "turnNumber": len(turn_history) + 1,
+            "playerName": request.playerName,
+            "diceValue": request.diceValue,
+            "caseId": "none",
+            "selectedOption": None,
+            "feedback": {},
+            "pointsEarned": 0,
+            "timestamp": datetime.now().isoformat()
+        }
+        new_config["turnHistory"] = turn_history + [new_turn]
+        
+        # Calculate new turn indices and wrap around
+        total_players = len(all_players) if all_players else 1
+        current_index = config.get("current_turn_index", len(turn_history) % total_players)
+        curr_completed = config.get("completed_turns", len(turn_history) // total_players)
+        
+        new_index = (current_index + 1) % total_players
+        new_config["current_turn_index"] = new_index
+        
+        if new_index == 0:
+            new_config["completed_turns"] = curr_completed + 1
+        else:
+            new_config["completed_turns"] = curr_completed
+        
+        if len(new_config["turnHistory"]) >= config.get("totalTurns", 10):
+            new_status = "finished"
+            new_phase = "finished"
+
+    # 4. EXECUTE ATOMIC TRANSACTION VIA RPC
+    # This replaces the two separate .update() calls
+    try:
+        supabase.rpc("commit_player_move", {
+            "p_room_id": str(room["id"]),
+            "p_player_id": str(player["id"]),
+            "p_new_position": new_pos.dict(),
+            "p_new_phase": new_phase,
+            "p_new_dice_value": new_dice_value,
+            "p_new_zone_id": new_zone_id,
+            "p_new_config": new_config,
+            "p_new_status": new_status
+        }).execute()
+        
+        # FIX: The SQL RPC uses COALESCE(p_new_dice_value, dice_value) which prevents NULL 
+        # from overwriting existing dice values on turn end. Forcefully clear it if necessary.
+        update_cols = {}
+        if new_dice_value is None:
+            update_cols["dice_value"] = None
+        
+        # Keep root column in sync with config
+        if new_config.get("current_case_id"):
+            update_cols["current_case_id"] = new_config["current_case_id"]
+        
+        if update_cols:
+            supabase.table("rooms").update(update_cols).eq("id", room["id"]).execute()
+            
+    except Exception as e:
+        # Fallback if RPC is not yet implemented in DB, or handle error
+        raise HTTPException(status_code=500, detail=f"Atomic update failed: {str(e)}")
     
     return MoveResponse(
         newPosition=new_pos,
         remainingSteps=move_result["remainingSteps"],
         status=move_result["status"],
         options=move_result.get("options"),
-        zoneId=move_result.get("zoneId")
+        zoneId=move_result.get("zoneId"),
+        caseData=case_response
     )
 @router.post("/rooms/{roomCode}/turn", response_model=LiveGameState)
 async def record_turn(roomCode: str, turn: TurnRecord):
@@ -323,7 +472,7 @@ async def roll_dice(roomCode: str, request: RollDiceRequest):
             )
 
     # 3. Generate Dice
-    dice_value = random.randint(6, 12)
+    dice_value = random.randint(11, 12)
     
     # 4. Update Supabase Room (Broadcast via Realtime)
     # This triggers an UPDATE event that the frontend listens to
@@ -334,52 +483,6 @@ async def roll_dice(roomCode: str, request: RollDiceRequest):
     
     return RollDiceResponse(diceValue=dice_value)
 
-@router.get("/rooms/{roomCode}/case", response_model=CaseResponse)
-async def get_current_case(roomCode: str):
-    # 1. Get room
-    room_res = supabase.table("rooms").select("*").eq("room_code", roomCode).execute()
-    if not room_res.data:
-        raise HTTPException(status_code=404, detail="Room not found")
-    
-    room = room_res.data[0]
-    zone_id = room.get("current_zone_id")
-    
-    if not zone_id:
-        raise HTTPException(status_code=400, detail="No zone currently active in this room")
-
-    # 2. Map Zone ID (string) to Zone Number (int) for DB query
-    # Mapping based on boardGraph.ts zones
-    ZONE_MAP = {
-        "hospital": 1,
-        "wifi": 2,
-        "home": 3,
-        "neighborhood": 4,
-        "school": 5
-    }
-    zone_number = ZONE_MAP.get(zone_id, 1) # Fallback to 1 if unknown
-    
-    # 3. Fetch random case for that zone
-    case_res = supabase.table("cases").select("*").eq("zone", zone_number).execute()
-    if not case_res.data:
-        # Fallback to any case if zone has none
-        case_res = supabase.table("cases").select("*").limit(1).execute()
-    
-    if not case_res.data:
-        raise HTTPException(status_code=404, detail="No cases found in DB")
-    
-    selected_case = random.choice(case_res.data)
-    
-    # 4. Update room phase and case
-    supabase.table("rooms").update({
-        "phase": "arguing",
-        "current_case_id": selected_case["id"]
-    }).eq("id", room["id"]).execute()
-    
-    return CaseResponse(
-        caseId=selected_case["id"],
-        description=selected_case["description"],
-        rubric=[RubricOption(**r) for r in selected_case["rubric"]]
-    )
 
 @router.post("/rooms/{roomCode}/vote")
 async def cast_vote(roomCode: str, request: VoteRequest):
@@ -400,15 +503,16 @@ async def cast_vote(roomCode: str, request: VoteRequest):
     supabase.table("votes").upsert(vote_data).execute()
     
     # 3. Check if all players have voted
-    players_res = supabase.table("players").select("name").eq("room_id", room_id).execute()
-    all_players = [p["name"] for p in players_res.data]
+    players_res = supabase.table("players").select("*").eq("room_id", room_id).order("created_at").execute()
+    all_players = players_res.data
     
     votes_res = supabase.table("votes").select("voter_name, option_id").eq("room_id", room_id).execute()
     current_votes = votes_res.data
     
-    # 4. If everyone voted, trigger the "Broadcast" (Automatic Transition)
-    if len(current_votes) >= len(all_players):
-        return await _process_voting_results(room, current_votes)
+    # 4. If everyone (except the acting player) voted, trigger results
+    # Threshold is num_players - 1 because active player doesn't vote for self
+    if len(current_votes) >= len(all_players) - 1:
+        return await _process_voting_results(room, current_votes, all_players)
     
     # Otherwise, just update phase to 'voting' if it was 'arguing'
     if room["phase"] == "arguing":
@@ -416,46 +520,67 @@ async def cast_vote(roomCode: str, request: VoteRequest):
     
     return {"status": "vote_cast", "waitingFor": len(all_players) - len(current_votes)}
 
-async def _process_voting_results(room, votes):
+async def _process_voting_results(room, votes, all_players):
     room_id = room["id"]
+    config = room.get("config", {})
     
-    # 1. Get current case to know the points
-    case_res = supabase.table("cases").select("*").eq("id", room["current_case_id"]).execute()
+    # 1. Get current case from config (Source of Truth) or root column (Fallback)
+    case_id = config.get("current_case_id") or room.get("current_case_id")
+    
+    if not case_id:
+        raise HTTPException(
+            status_code=400, 
+            detail="No active case found for this room. Ensure the player has reached a zone."
+        )
+    
+    case_res = supabase.table("cases").select("*").eq("id", str(case_id)).execute()
     if not case_res.data:
-        raise HTTPException(status_code=404, detail="Current case not found")
+        raise HTTPException(status_code=404, detail=f"Case {case_id} not found")
     
     case = case_res.data[0]
     rubric = {r["id"]: r["points"] for r in case["rubric"]}
     
     # 2. Calculate Winner
-    counts = {}
-    for v in votes:
-        opt = v["option_id"]
-        counts[opt] = counts.get(opt, 0) + 1
+    # If no votes, default to 0 points (shouldn't happen with threshold)
+    if not votes:
+        final_option = "none"
+        points_earned = 0
+    else:
+        counts = {}
+        for v in votes:
+            opt = v["option_id"]
+            counts[opt] = counts.get(opt, 0) + 1
+        
+        max_votes = max(counts.values())
+        winners = [opt for opt, count in counts.items() if count == max_votes]
+        
+        final_option = winners[0]
+        if len(winners) > 1:
+            # Tie-breaker: choose option with more points in rubric
+            final_option = max(winners, key=lambda opt: rubric.get(opt, 0))
+        
+        points_earned = rubric.get(final_option, 0)
     
-    max_votes = max(counts.values())
-    winners = [opt for opt, count in counts.items() if count == max_votes]
+    # 3. IDENTIFY ACTING PLAYER
+    # The active player is the one whose turn it WAS
+    current_turn_idx = room.get("current_turn_index", 0)
+    # players were passed as all_players (ordered by created_at)
+    acting_player = all_players[current_turn_idx]
     
-    final_option = winners[0]
-    if len(winners) > 1:
-        # Tie-breaker
-        final_option = max(winners, key=lambda opt: rubric.get(opt, 0))
+    # 4. UPDATE PLAYER SCORE IN DB
+    new_score = acting_player.get("score", 0) + points_earned
+    supabase.table("players").update({"score": new_score}).eq("id", acting_player["id"]).execute()
     
-    points_earned = rubric.get(final_option, 0)
+    # 5. PREPARE NEXT TURN
+    num_players = len(all_players)
+    next_turn_idx = (current_turn_idx + 1) % num_players
     
-    # 3. Update Turn History in Room Config
     config = room.get("config", {})
     turn_history = config.get("turnHistory", [])
     
-    # Get current player
-    players_res = supabase.table("players").select("*").eq("room_id", room_id).order("created_at").execute()
-    players = players_res.data
-    current_player_idx = len(turn_history) % len(players)
-    current_player = players[current_player_idx]
-    
     new_turn = {
         "turnNumber": len(turn_history) + 1,
-        "playerName": current_player["name"],
+        "playerName": acting_player["name"],
         "diceValue": room.get("dice_value", 0),
         "caseId": str(room["current_case_id"]),
         "selectedOption": final_option,
@@ -464,22 +589,32 @@ async def _process_voting_results(room, votes):
     }
     turn_history.append(new_turn)
     
-    # 4. Check if game is finished
-    is_finished = len(turn_history) >= config.get("totalTurns", 10)
+    # Global completed turns
+    curr_completed = config.get("completed_turns", 0)
+    total_turns_limit = config.get("totalTurns", 10)
+    
+    is_finished = (curr_completed + 1) >= total_turns_limit
     new_status = "finished" if is_finished else "in_progress"
     new_phase = "finished" if is_finished else "rolling"
     
-    # 5. Atomic Update
+    # 6. ATOMIC UPDATE ROOM
+    # Delete votes first
     supabase.table("votes").delete().eq("room_id", room_id).execute()
     
     update_data = {
         "status": new_status,
         "phase": new_phase,
+        "current_turn_index": next_turn_idx,
         "current_zone_id": None,
         "current_argument": None,
+        "current_case_id": None,
+        "dice_value": None, # Reset dice for next player
         "config": {
             **config,
-            "turnHistory": turn_history
+            "turnHistory": turn_history,
+            "completed_turns": curr_completed + 1,
+            "current_case_id": None,
+            "current_case_data": None
         }
     }
     supabase.table("rooms").update(update_data).eq("id", room_id).execute()
@@ -487,7 +622,8 @@ async def _process_voting_results(room, votes):
     return {
         "status": "voting_completed",
         "winnerOption": final_option,
-        "pointsEarned": points_earned
+        "pointsEarned": points_earned,
+        "nextPlayer": all_players[next_turn_idx]["name"]
     }
 
 @router.get("/rooms/{roomCode}/vote-results")
@@ -509,3 +645,46 @@ async def get_vote_results(roomCode: str):
         "pointsEarned": last_turn.get("pointsEarned"),
         "isFinished": room["status"] == "finished"
     }
+
+@router.post("/rooms/{roomCode}/reset")
+async def reset_room(roomCode: str):
+    # 1. Get room
+    room_res = supabase.table("rooms").select("*").eq("room_code", roomCode).execute()
+    if not room_res.data:
+        raise HTTPException(status_code=404, detail="Room not found")
+    
+    room = room_res.data[0]
+    room_id = room["id"]
+    
+    # 2. Update rooms table
+    # Resetting status, phase, and the config JSONB (which stores turn history)
+    config = room.get("config", {})
+    new_config = config.copy()
+    new_config["turnHistory"] = []
+    new_config["current_turn_index"] = 0
+    new_config["completed_turns"] = 0
+    
+    update_room_data = {
+        "status": "waiting",
+        "phase": "rolling",
+        "dice_value": None,
+        "current_argument": None,
+        "current_case_id": None,
+        "current_zone_id": None,
+        "config": new_config
+    }
+    
+    supabase.table("rooms").update(update_room_data).eq("id", room_id).execute()
+    
+    # 3. Update players table
+    # Only resetting current_position since score and turns_played are calculated from turnHistory
+    initial_position = {"nodeId": "park", "edgeId": None, "edgeProgress": 0}
+    supabase.table("players").update({
+        "current_position": initial_position
+    }).eq("room_id", room_id).execute()
+    
+    return {
+        "status": "success",
+        "message": f"Room {roomCode} has been reset to initial state."
+    }
+

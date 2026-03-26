@@ -67,6 +67,7 @@ class MoveResponse(BaseModel):
     status: str
     options: Optional[List[str]] = None
     zoneId: Optional[str] = None
+    caseData: Optional[CaseResponse] = None
 
 class RoomResponse(BaseModel):
     roomCode: str
