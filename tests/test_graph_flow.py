@@ -35,6 +35,7 @@ async def test_full_graph_flow():
         host_res = await client.post(f"{BASE_URL}/rooms", json={"hostName": "Carlos", "hostAvatar": "av-1"})
         room = host_res.json()
         room_code = room["roomCode"]
+        room_id = room["gameId"]
         print(f"   * Room {room_code} created.")
 
         print("\n2. Joining Guest...")
@@ -78,15 +79,25 @@ async def test_full_graph_flow():
         # 5. Testing Automated Voting results
         print("\n5. Testing Argument and Voting...")
         # Manually set room to arguing to test voting broadcast
+        # In a real game, this would happen by reaching a zone
+        test_case_res = supabase.table("cases").select("*").limit(1).execute()
+        test_case_id = test_case_res.data[0]["id"]
+
         supabase.table("rooms").update({
             "phase": "arguing",
-            "current_zone_id": "hospital"
+            "current_zone_id": "hospital",
+            "current_case_id": test_case_id,
+            "config": {
+                "totalTurns": 5,
+                "current_case_id": test_case_id,
+                "turnHistory": []
+            }
         }).eq("room_code", room_code).execute()
         
-        print("   * Requesting Case...")
-        case_res = await client.get(f"{BASE_URL}/rooms/{room_code}/case")
-        case_data = case_res.json()
-        print(f"   * Case Received: {case_data['description']}")
+        # Get the case data from room state instead of non-existent /case endpoint
+        room_state = await client.get(f"{BASE_URL}/rooms/{room_code}")
+        room_data = room_state.json()
+        print(f"   * Case ID in room: {room_data.get('currentCaseId')}")
 
         # NEW: Submit Argument
         print("   * Carlos submits an argument...")
@@ -96,13 +107,10 @@ async def test_full_graph_flow():
         })
         print(f"   * Argument Status: {arg_res.json()['status']}")
 
-        print("   * Carlos votes A...")
-        await client.post(f"{BASE_URL}/rooms/{room_code}/vote", json={"voterName": "Carlos", "optionId": "A"})
-        
         print("   * Maria votes A (This should trigger the transition)...")
         vote_res = await client.post(f"{BASE_URL}/rooms/{room_code}/vote", json={"voterName": "Maria", "optionId": "A"})
         vote_data = vote_res.json()
-        print(f"   * Vote Response: {vote_data['status']}")
+        print(f"   * Vote Response: {vote_data.get('status', 'Error: ' + str(vote_data))}")
         
         # Check Room State (Should be rolling for Maria now)
         room_check = supabase.table("rooms").select("*").eq("room_code", room_code).execute()

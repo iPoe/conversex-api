@@ -130,7 +130,7 @@ def advance_turn_config(
 
     next_index = (current_index + 1) % max(num_players, 1)
     new_completed = curr_completed + (1 if next_index == 0 else 0)
-    is_finished = len(turn_history) >= total_turns
+    is_finished = len(turn_history) >= (total_turns * max(num_players, 1))
 
     new_config["turnHistory"] = turn_history
     new_config["current_turn_index"] = next_index
