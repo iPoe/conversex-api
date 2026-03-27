@@ -14,6 +14,7 @@ from app.services.game_service import (
     build_turn_record,
     advance_turn_config,
     roll_dice,
+    pick_case_for_zone,
     DICE_MIN,
     DICE_MAX,
 )
@@ -155,3 +156,43 @@ class TestAdvanceTurnConfig:
         updated, _ = advance_turn_config(config, new_turn, 2)
         assert updated["current_case_id"] is None
         assert updated["current_case_data"] is None
+
+# ─────────────────────────────────────────────
+# pick_case_for_zone
+# ─────────────────────────────────────────────
+
+class TestPickCaseForZone:
+    def test_filters_empty_descriptions(self):
+        mock_supabase = MagicMock()
+        # Mock response with one valid and one empty case
+        mock_supabase.table().select().eq().neq().execute.return_value.data = [
+            {"id": "valid", "description": "Some text", "zone": 1}
+        ]
+        
+        case = pick_case_for_zone("hospital", mock_supabase)
+        assert case is not None
+        assert case["id"] == "valid"
+        
+        # Verify .neq("description", "") was called
+        mock_supabase.table().select().eq().neq.assert_called_with("description", "")
+
+    def test_fallback_to_all_valid_cases(self):
+        mock_supabase = MagicMock()
+        # 1. First call (by zone) returns empty
+        # 2. Second call (all cases) returns valid ones
+        mock_supabase.table().select().eq().neq().execute.return_value.data = []
+        mock_supabase.table().select().neq().execute.return_value.data = [
+            {"id": "any-valid", "description": "Generic case", "zone": 2}
+        ]
+        
+        case = pick_case_for_zone("hospital", mock_supabase)
+        assert case is not None
+        assert case["id"] == "any-valid"
+
+    def test_returns_none_if_no_valid_cases(self):
+        mock_supabase = MagicMock()
+        mock_supabase.table().select().eq().neq().execute.return_value.data = []
+        mock_supabase.table().select().neq().execute.return_value.data = []
+        
+        case = pick_case_for_zone("hospital", mock_supabase)
+        assert case is None

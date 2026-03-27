@@ -58,7 +58,8 @@ def seed_from_excel(file_path):
                 desc = row.get('CASO', '')
                 rubric_raw = row.get('RESPUESTA PUNTAJE', '')
                 
-                if pd.isna(desc) or desc == '': continue
+                if pd.isna(desc) or str(desc).strip() == '':
+                    continue
                 
                 # Parsear el bloque de texto a JSON
                 rubric = parse_rubric_text(rubric_raw)

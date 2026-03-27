@@ -57,15 +57,16 @@ def roll_dice() -> int:
 def pick_case_for_zone(zone_id: str, supabase) -> Optional[Dict[str, Any]]:
     """
     Fetch a random case for the given zone from the DB.
-    Falls back to any case if none found for the specific zone.
-    Returns None if the cases table is empty.
+    Filters out cases with empty descriptions.
+    Falls back to any valid case if none found for the specific zone.
+    Returns None if the cases table is empty or no valid cases found.
     """
     zone_number = ZONE_MAP.get(zone_id, 1)
-    case_res = supabase.table("cases").select("*").eq("zone", zone_number).execute()
+    case_res = supabase.table("cases").select("*").eq("zone", zone_number).neq("description", "").execute()
 
     if not case_res.data:
-        # Fallback: grab all available cases and pick one
-        case_res = supabase.table("cases").select("*").execute()
+        # Fallback: grab all available valid cases
+        case_res = supabase.table("cases").select("*").neq("description", "").execute()
 
     if not case_res.data:
         return None
