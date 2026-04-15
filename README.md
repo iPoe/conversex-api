@@ -75,6 +75,34 @@ alter table players add column if not exists turns_played int default 0;
 ```
 
 
+## 💻 Entorno de Desarrollo Local (Docker)
+
+Para evitar que tu proyecto de Supabase en la nube se pause y para acelerar el desarrollo, puedes correr todo el stack de base de datos en tu laptop.
+
+### 1. Requisitos Previos
+- **Docker Desktop** instalado y en ejecución.
+- **Supabase CLI**: `brew install supabase/tap/supabase` (Mac) o `npm install supabase --save-dev` (NPM).
+
+### 2. Configuración Inicial
+```bash
+npx supabase init  # Inicia el proyecto (solo la primera vez)
+npx supabase start # Levanta los contenedores y aplica migraciones automáticas
+```
+
+### 3. El "Switch" de la API
+La API puede alternar entre la nube y tu local usando la variable `ENV` en tu archivo `.env`:
+- `ENV=local`: Apunta al Docker local (`http://127.0.0.1:54321`).
+- `ENV=cloud`: Apunta a tu proyecto real en Supabase Cloud.
+
+### 4. Carga de Datos en Local
+Una vez que `supabase start` termine, carga las preguntas del juego:
+```bash
+export PYTHONPATH=$PYTHONPATH:.
+python3 scripts/seed_cases_from_excel.py
+```
+*Puedes ver y gestionar tus datos locales en: [http://localhost:54323](http://localhost:54323)*
+
+
 ## 🚀 Instalación y Uso
 
 1. **Clonar e Instalar:**

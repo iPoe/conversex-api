@@ -30,8 +30,8 @@ ZONE_MAP: Dict[str, int] = {
 
 # Dice range (inclusive). Board edge distances range from 3 to 11,
 # so a 1–6 die gives short hops while 1–12 spans the whole board.
-DICE_MIN = 13
-DICE_MAX = 17
+DICE_MIN = 18
+DICE_MAX = 20
 
 
 # ─────────────────────────────────────────────
