@@ -79,14 +79,23 @@ alter table players add column if not exists turns_played int default 0;
 
 Para evitar que tu proyecto de Supabase en la nube se pause y para acelerar el desarrollo, puedes correr todo el stack de base de datos en tu laptop.
 
+> [!IMPORTANT]
+> **Es crucial sincronizar el esquema local con la nube** para tener las funciones RPC necesarias (ej. `commit_player_move`). Si encuentras errores `500`, consulta la **[Guía de Desarrollo Local (LOCAL_DEV_GUIDE.md)](./LOCAL_DEV_GUIDE.md)**.
+
 ### 1. Requisitos Previos
 - **Docker Desktop** instalado y en ejecución.
 - **Supabase CLI**: `brew install supabase/tap/supabase` (Mac) o `npm install supabase --save-dev` (NPM).
 
-### 2. Configuración Inicial
+### 2. Configuración Inicial y Sincronización
+Para traer la réplica de la nube a tu local:
 ```bash
-npx supabase init  # Inicia el proyecto (solo la primera vez)
-npx supabase start # Levanta los contenedores y aplica migraciones automáticas
+npx supabase init   # Inicia el proyecto (solo la primera vez)
+npx supabase start  # Levanta los contenedores
+# Sincronización (Ver LOCAL_DEV_GUIDE.md para detalles)
+npx supabase login
+npx supabase link --project-ref <TU_PROJECT_REF>
+npx supabase db pull
+npx supabase db reset
 ```
 
 ### 3. El "Switch" de la API
